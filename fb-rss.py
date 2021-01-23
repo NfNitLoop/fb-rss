@@ -26,6 +26,8 @@ def main(args):
 
     with open(options.config_file) as f:
         config = toml.load(f)
+
+    cache_dir = config.get("cache_dir", ".")
     
     server = config["server_url"]
     client = Client(base_url=server)
@@ -36,7 +38,7 @@ def main(args):
         info = FeedInfo.from_config(feed)
 
         try:
-            guid_cache = GUIDCache(options.cache_dir, cache_name=info.user_id.string)
+            guid_cache = GUIDCache(cache_dir, cache_name=info.user_id.string)
             with guid_cache.opened():
                 sync_feed(client=client, feed=info, guid_cache=guid_cache)
         except Exception as e:
@@ -60,13 +62,6 @@ def parse_args(args):
         default=False,
         action="store_true",
         help="Enable extra verbose output.",
-    )
-
-    parser.add_argument(
-        "--cache-dir",
-        dest="cache_dir",
-        default=".",
-        help="Where should we save a cache of RSS GUIDs?"
     )
     
     return parser.parse_args(args)
