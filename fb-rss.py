@@ -2,6 +2,7 @@
 Quick and dirty script to copy RSS feeds into FeoBlog.
 """
 
+import argparse
 from datetime import datetime, timezone
 from calendar import timegm
 import traceback
@@ -14,7 +15,14 @@ from feoblog import Client, UserID, Signature, Password
 from feoblog.protos import Item, Profile, Post, ItemType
 
 def main(args):
-    with open("config.toml") as f:
+
+    options = parse_args(args)
+
+    global debug_enabled
+    if options.debug:
+        debug_enabled = True
+
+    with open(options.config_file) as f:
         config = toml.load(f)
     
     server = config["server_url"]
@@ -32,6 +40,27 @@ def main(args):
             print(f"Error fetching {info.rss_url}:")
             traceback.print_exc()
             continue
+
+
+def parse_args(args):
+    parser = argparse.ArgumentParser(description=__doc__)
+
+    parser.add_argument(
+        "--config-file",
+        default="config.toml",
+        help="The configuration file which lists RSS feeds to sync.",
+    )
+
+    parser.add_argument(
+        "--debug",
+        default=False,
+        action="store_true",
+        help="Enable extra verbose output.",
+    )
+    
+    return parser.parse_args(args)
+
+
 
 class FeedInfo:
     @staticmethod
@@ -60,9 +89,12 @@ class FeedInfo:
 
         return item
 
+debug_enabled = False
+
 def debug(*argc):
+    if not debug_enabled:
+        return
     print(*argc)
-    return
 
 
 def sync_feed(client: Client, feed: FeedInfo):
