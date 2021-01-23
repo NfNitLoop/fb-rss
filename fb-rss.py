@@ -3,8 +3,10 @@ Quick and dirty script to copy RSS feeds into FeoBlog.
 """
 
 import argparse
-from datetime import datetime, timezone
 from calendar import timegm
+from contextlib import contextmanager
+from datetime import datetime, timezone
+import os
 import traceback
 
 import feedparser
@@ -33,8 +35,10 @@ def main(args):
     for feed in config["feeds"]:
         info = FeedInfo.from_config(feed)
 
-        try: 
-            sync_feed(client=client, feed=info)
+        try:
+            guid_cache = GUIDCache(options.cache_dir, cache_name=info.user_id.string)
+            with guid_cache.opened():
+                sync_feed(client=client, feed=info, guid_cache=guid_cache)
         except Exception as e:
             num_errors += 1
             print(f"Error fetching {info.rss_url}:")
@@ -56,6 +60,13 @@ def parse_args(args):
         default=False,
         action="store_true",
         help="Enable extra verbose output.",
+    )
+
+    parser.add_argument(
+        "--cache-dir",
+        dest="cache_dir",
+        default=".",
+        help="Where should we save a cache of RSS GUIDs?"
     )
     
     return parser.parse_args(args)
@@ -97,7 +108,7 @@ def debug(*argc):
     print(*argc)
 
 
-def sync_feed(client: Client, feed: FeedInfo):
+def sync_feed(client: Client, feed: FeedInfo, guid_cache: "GUIDCache"):
     debug("Syncing", feed.name)
     has_items = False
     # The timestamp of the last item that was saved to the blog.
@@ -129,21 +140,25 @@ def sync_feed(client: Client, feed: FeedInfo):
     # Send posts oldest first in case we fail part-way, so we can resume:
     posts.sort(key=lambda p: p.timestamp)
 
-
     current_time = now()
     for post in posts:
+        debug()
         debug(post.timestamp, post.title)
+        debug("guid", post.guid)
         if post.timestamp <= latest_timestamp:
-            debug("skipping post")
+            debug("skipping old post")
             continue
         if post.timestamp > current_time:
             debug("Refusing to sync post w/ future time:")
-            debug(post.timestmap, post.title)
             continue
-        
+        if post.guid in guid_cache:
+            debug("Skipping post with non-unique GUID", post.guid)
+            continue
+
         item_bytes = post.as_item().SerializeToString()
         sig = feed.password.sign(item_bytes)
         client.put_item(feed.user_id, sig, item_bytes)
+        guid_cache.add(post.guid)
     
 
 h2t = html2text.HTML2Text()
@@ -158,6 +173,7 @@ class Post:
         p.title = entry.title
         p.link = entry.link
         p.description = entry.description
+        p.guid = entry.guid
         p.timestamp = parsed_time_to_ts(entry.published_parsed)
         return p
 
@@ -193,6 +209,79 @@ def parsed_time_to_ts(time_struct) -> int:
 def now() -> int:
     now = datetime.now(tz=timezone.utc)
     return fb_timestamp(now)
+
+class GUIDCache:
+    """
+    RSS provides a string GUID for each post to help clients de-dupe posts which may otherwise change over time.
+    This class will load and store those GUIDs in a plain text file to provide functionality to dedupe.
+    """
+
+    def __init__(self, cache_dir, cache_name, max_guids=500):
+        self.__filename = os.path.join(cache_dir, f"{cache_name}.guids")
+        self.max_guids = max_guids
+
+        # Maintain both an ordered list and an unordered set (for fast lookup)
+        self.__guid_list = []
+        self.__guid_set = set()
+
+    @contextmanager
+    def opened(self):
+        """
+        use:
+        with cache.opened: 
+            # ...
+
+        Loads caches from the cache file, making them available for `in`.
+        After execution, saves the cache back to the same file.
+        """
+        self.__guid_list = []
+        self.__guid_set = set()
+        if not os.path.exists(self.__filename):
+            # Save an empty file to make sure we can write before we begin:
+            self.__save()
+        
+        self.__load()
+        try:
+            yield()
+        finally:
+            # Always try saving any new GUIDs that we may have added:
+            self.__save()
+    
+    def __contains__(self, guid):
+        if guid == "":
+            debug("Received an empty guid. Skipping it.")
+            # return True so that we *don't* save this item. Empty GUIDs can't be deduped.
+            return True
+
+        return guid in self.__guid_set
+
+    def add(self, guid):
+        if guid in self:
+            return
+
+        if guid == "":
+            debug("Refusing to add empty guid to cache")
+            return
+
+        self.__guid_list.append(guid)
+        self.__guid_set.add(guid)
+        
+
+    def __save(self): 
+        with open(self.__filename, "w", encoding="utf-8") as f:
+            guids = self.__guid_list[-self.max_guids:]
+            for guid in guids:
+                f.write(guid)
+                f.write("\n")
+
+    def __load(self): 
+        with open(self.__filename, "r", encoding="utf-8") as f:
+            self.__guid_list = [
+                line
+                for line in f
+                if line != ""
+            ][-self.max_guids:]
+            self.__guid_set = set(self.__guid_list)
 
 
 if __name__ == "__main__":
