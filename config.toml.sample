@@ -1,0 +1,26 @@
+# Which FeoBlog server should we push new posts to?
+server_url = "https://your_feoblog.example.com"
+
+# The script saves some .guids files, and will try to put them here:
+cache_dir = "./guids"
+
+[[feeds]]
+# On first post, we'll create a profile w/ this name:
+name = "New York Times Top Stories"
+rss_url = "https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml"
+
+# FeoBlog user_id & password, so we can upload our posts:
+user_id = "6fS2V5673fw3cq8Tq6xggyfN8ztETf3WNmfDybxtRyU2"
+password = ""
+
+[[feeds]]
+name = "The Verge"
+rss_url = "https://www.theverge.com/rss/index.xml"
+user_id = "HTh8BHca5fWukV78Lkgd4R73a4DmwciJuLgxkwPMv8su"
+password = ""
+
+[[feeds]]
+name = "Kotaku"
+rss_url = "https://kotaku.com/rss"
+user_id = "8tUsPDYGiWzKW1ZNUBgU9A1XRZa1f2YBUbJGxScVwbtZ"
+password = ""
