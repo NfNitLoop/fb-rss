@@ -258,6 +258,10 @@ class GUIDCache:
             debug("Refusing to add empty guid to cache")
             return
 
+        if "\n" in guid:
+            debug("Refusing to add a GUID that contains a newline.")
+            return
+
         self.__guid_list.append(guid)
         self.__guid_set.add(guid)
         
@@ -271,9 +275,13 @@ class GUIDCache:
 
     def __load(self): 
         with open(self.__filename, "r", encoding="utf-8") as f:
+            lines = (
+                line[:-1]  # remove \n
+                for line in f
+            )
             self.__guid_list = [
                 line
-                for line in f
+                for line in lines
                 if line != ""
             ][-self.max_guids:]
             self.__guid_set = set(self.__guid_list)
